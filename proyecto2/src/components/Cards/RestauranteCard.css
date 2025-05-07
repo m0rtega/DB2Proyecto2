@@ -1,0 +1,21 @@
+.restaurante-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background-color: #fafafa;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.restaurante-card .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.favorito-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
