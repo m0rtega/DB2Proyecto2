@@ -1,6 +1,12 @@
 import os
 from datetime import datetime
 from typing import List, Optional
+import gridfs
+from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+import json
+from fastapi.encoders import jsonable_encoder
+
 
 from fastapi import (
     FastAPI,
@@ -11,6 +17,7 @@ from fastapi import (
     File,
     Query,
     status,
+    Form
 )
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
@@ -33,6 +40,8 @@ MONGO_URI = "mongodb+srv://geraxpineda:a@restaurante.j0pm3k9.mongodb.net/?retryW
 client = MongoClient(MONGO_URI)
 db = client["Proyecto"]
 
+fs = gridfs.GridFS(db)
+
 def serialize_doc(doc):
     doc["_id"] = str(doc["_id"])
     for key, value in doc.items():
@@ -50,6 +59,48 @@ def root():
 # ---------------------------------------------------------------------------
 # CRUD – RESTAURANTES
 # ---------------------------------------------------------------------------
+
+@app.get("/restaurantes/mejor_calificados", tags=["Restaurantes"])
+async def mejores_restaurantes():
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$restaurante_id",
+                "promedio_puntaje": {"$avg": "$puntaje"},
+                "total_reseñas": {"$sum": 1},
+            }
+        },
+        {"$sort": {"promedio_puntaje": -1}},
+        {"$limit": 10},
+        {
+            "$lookup": {
+                "from": "restaurantes",
+                "localField": "_id",
+                "foreignField": "_id",
+                "as": "restaurante"
+            }
+        },
+        {"$unwind": "$restaurante"},
+        {
+            "$project": {
+                "_id": "$restaurante._id",
+                "nombre": "$restaurante.nombre",
+                "tipo_comida": "$restaurante.tipo_comida",
+                "direccion": "$restaurante.direccion",
+                "promedio_puntaje": {"$round": ["$promedio_puntaje", 2]},
+                "total_reseñas": 1
+            }
+        }
+    ]
+
+    resultados = list(db.reseñas.aggregate(pipeline))
+
+    # 🔄 Convertir ObjectId a str para todos los _id en los resultados
+    for doc in resultados:
+        doc["_id"] = str(doc["_id"])
+
+    return jsonable_encoder(resultados)
+
 
 @app.post("/restaurantes", status_code=status.HTTP_201_CREATED, tags=["Restaurantes"])
 async def crear_restaurante(restaurante: dict = Body(...)):
@@ -100,13 +151,40 @@ async def obtener_restaurante(restaurante_id: str = Path(..., description="ID de
 @app.put("/restaurantes/{restaurante_id}", tags=["Restaurantes"])
 async def actualizar_restaurante(
     restaurante_id: str,
-    datos: dict = Body(...),
+    datos: dict = Body(...)
 ):
-    resultado = db.restaurantes.update_one(
-        {"_id": ObjectId(restaurante_id)}, {"$set": datos}
+    # Validar ID
+    try:
+        oid = ObjectId(restaurante_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID inválido")
+
+    # Opcional: Validaciones mínimas de tipo
+    if "tipo_comida" in datos and not isinstance(datos["tipo_comida"], list):
+        raise HTTPException(
+            status_code=400,
+            detail="El campo 'tipo_comida' debe ser una lista de strings"
+        )
+    if "direccion" in datos and "coordenadas" in datos["direccion"]:
+        coords = datos["direccion"]["coordenadas"]
+        if not isinstance(coords, list) or len(coords) != 2:
+            raise HTTPException(
+                status_code=400,
+                detail="El campo 'coordenadas' debe ser una lista de dos valores [long, lat]"
+            )
+    
+    if "_id" in datos:
+        del datos["_id"]
+
+    # Actualizar
+    result = db.restaurantes.update_one(
+        {"_id": oid},
+        {"$set": datos}
     )
-    if resultado.matched_count == 0:
+
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Restaurante no encontrado")
+
     return {"mensaje": "Restaurante actualizado"}
 
 
@@ -233,6 +311,38 @@ async def listar_ordenes_usuario(usuario_id: str):
 # CRUD – ARTÍCULOS
 # ---------------------------------------------------------------------------
 
+@app.post("/restaurantes/{restaurante_id}/menu/lote", tags=["Artículos"])
+async def agregar_articulos_en_lote_con_imagenes(
+    restaurante_id: str,
+    articulos_json: str = Form(...),
+    imagenes: Optional[List[UploadFile]] = File(None),
+):
+    try:
+        articulos = json.loads(articulos_json)
+
+        if not isinstance(articulos, list) or not articulos:
+            raise HTTPException(status_code=400, detail="La lista de artículos es inválida o vacía")
+
+        nuevos_articulos = []
+        for idx, articulo in enumerate(articulos):
+            articulo["_id"] = ObjectId()
+            articulo["restaurante_id"] = ObjectId(restaurante_id)
+
+            # Si hay imágenes, y una corresponde a este índice
+            if imagenes and idx < len(imagenes):
+                if imagenes[idx].filename != "blob":
+                    contenido = await imagenes[idx].read()
+                    imagen_id = fs.put(contenido, filename=imagenes[idx].filename, content_type=imagenes[idx].content_type)
+                    articulo["imagen_id"] = imagen_id
+
+            nuevos_articulos.append(articulo)
+
+        resultado = db.articulos.insert_many(nuevos_articulos)
+        return JSONResponse(content={"ids": [str(_id) for _id in resultado.inserted_ids]})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al insertar artículos: {str(e)}")
+
 
 @app.post("/restaurantes/{restaurante_id}/menu", status_code=201, tags=["Artículos"])
 async def agregar_articulo(restaurante_id: str, articulo: dict = Body(...)):
@@ -298,6 +408,24 @@ async def eliminar_articulo(articulo_id: str):
 # ---------------------------------------------------------------------------
 # CRUD – ÓRDENES
 # ---------------------------------------------------------------------------
+
+@app.put("/ordenes/cambiar_estado", tags=["Órdenes"])
+async def cambiar_estado_masivo(
+    restaurante_id: str = Body(...),
+    estado_actual: str = Body(...),
+    nuevo_estado: str = Body(...)
+):
+    try:
+        result = db.ordenes.update_many(
+            {
+                "restaurante_id": ObjectId(restaurante_id),
+                "estado": estado_actual,
+            },
+            {"$set": {"estado": nuevo_estado}}
+        )
+        return {"modificados": result.modified_count}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 
 @app.post("/ordenes", status_code=201, tags=["Órdenes"])
@@ -404,6 +532,113 @@ async def eliminar_multiples_ordenes(payload: DeleteManyPayload):
             raise HTTPException(status_code=404, detail="No se eliminaron órdenes")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error al eliminar órdenes: {str(e)}")
+
+# ---------------------------------------------------------------------------
+# CRUD – IMAGENES
+# ---------------------------------------------------------------------------
+
+from fastapi import UploadFile
+
+@app.post("/articulos/{articulo_id}/imagen", tags=["Imágenes"])
+async def subir_imagen_articulo(articulo_id: str, file: UploadFile = File(...)):
+    contenido = await file.read()
+
+    articulo = db.articulos.find_one({"_id": ObjectId(articulo_id)})
+    if articulo and "imagen_id" in articulo:
+        fs.delete(ObjectId(articulo["imagen_id"]))
+
+    imagen_id = fs.put(contenido, filename=file.filename, content_type=file.content_type)
+
+    db.articulos.update_one(
+        {"_id": ObjectId(articulo_id)},
+        {"$set": {"imagen_id": imagen_id}}
+    )
+    return {"mensaje": "Imagen subida correctamente", "imagen_id": str(imagen_id)}
+
+@app.get("/imagenes/{imagen_id}", tags=["Imágenes"])
+def obtener_imagen(imagen_id: str):
+    try:
+        grid_out = fs.get(ObjectId(imagen_id))
+        return StreamingResponse(grid_out, media_type=grid_out.content_type)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Imagen no encontrada")
+
+@app.delete("/imagenes/{imagen_id}", tags=["Imágenes"])
+def eliminar_imagen(imagen_id: str):
+    try:
+        articulo = db.articulos.find_one({"imagen_id": ObjectId(imagen_id)})
+        if not articulo:
+            raise HTTPException(status_code=404, detail="Artículo no encontrado con esta imagen")
+
+        fs.delete(ObjectId(imagen_id))
+
+        db.articulos.update_one(
+            {"_id": articulo["_id"]},
+            {"$unset": {"imagen_id": ""}}
+        )
+
+        return {"mensaje": "Imagen eliminada correctamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo eliminar la imagen: {str(e)}")
+
+@app.put("/articulos/{articulo_id}/imagen", tags=["Imágenes"])
+async def actualizar_imagen_articulo(articulo_id: str, file: UploadFile = File(...)):
+    contenido = await file.read()
+
+    # Buscar el artículo
+    articulo = db.articulos.find_one({"_id": ObjectId(articulo_id)})
+    if not articulo:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+
+    # Eliminar imagen anterior si existe
+    if "imagen_id" in articulo:
+        try:
+            fs.delete(ObjectId(articulo["imagen_id"]))
+        except Exception:
+            pass  # Imagen ya no existe o ya fue eliminada
+
+    # Subir nueva imagen
+    nueva_imagen_id = fs.put(contenido, filename=file.filename, content_type=file.content_type)
+
+    # Actualizar referencia en el documento
+    db.articulos.update_one(
+        {"_id": ObjectId(articulo_id)},
+        {"$set": {"imagen_id": nueva_imagen_id}}
+    )
+
+    return {"mensaje": "Imagen actualizada correctamente", "imagen_id": str(nueva_imagen_id)}
+
+@app.post("/articulos/imagen", tags=["Imágenes"])
+async def actualizar_imagen_articulo(
+    articulo_id: str = Form(...),
+    imagen: UploadFile = File(...)
+):
+    try:
+        print("Si entra perro")
+
+        # Verifica si el artículo existe
+        articulo = db.articulos.find_one({"_id": ObjectId(articulo_id)})
+        if not articulo:
+            raise HTTPException(status_code=404, detail="Artículo no encontrado")
+
+        # Elimina imagen anterior si hay
+        if "imagen_id" in articulo:
+            fs.delete(ObjectId(articulo["imagen_id"]))
+
+        # Guarda nueva imagen en GridFS
+        contenido = await imagen.read()
+        imagen_id = fs.put(contenido, filename=imagen.filename, content_type=imagen.content_type)
+
+        # Actualiza referencia
+        db.articulos.update_one(
+            {"_id": ObjectId(articulo_id)},
+            {"$set": {"imagen_id": imagen_id, "imagen_nombre": imagen.filename}}
+        )
+
+        return {"mensaje": "Imagen actualizada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar imagen: {str(e)}")
+
 
 
 # ---------------------------------------------------------------------------

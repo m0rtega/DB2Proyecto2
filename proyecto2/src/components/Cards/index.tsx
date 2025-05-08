@@ -1,4 +1,3 @@
-// components/RestauranteCard.tsx
 import "./RestauranteCard.css";
 import { useNavigate } from "react-router-dom";
 
@@ -12,6 +11,8 @@ interface Restaurante {
   tipo_comida: string[];
   onFavorito?: () => void;
   esFavorito?: boolean;
+  promedio_puntaje?: number;
+  total_reseñas?: number;
 }
 
 const Cards = ({
@@ -21,6 +22,8 @@ const Cards = ({
   tipo_comida,
   onFavorito,
   esFavorito = false,
+  promedio_puntaje,
+  total_reseñas,
 }: Restaurante) => {
   const navigate = useNavigate();
 
@@ -36,14 +39,30 @@ const Cards = ({
     >
       <div className="header">
         <h3>{nombre}</h3>
-        <button className="favorito-btn" onClick={onFavorito}>
+        <button
+          className="favorito-btn"
+          onClick={(e) => {
+            e.stopPropagation(); // Evita que al marcar favorito se navegue
+            onFavorito?.();
+          }}
+        >
           {esFavorito ? "⭐" : "☆"}
         </button>
       </div>
       <p>
-        🏢 Direccion: {direccion.calle}, {direccion.ciudad}
+        🏢 Dirección: {direccion.calle}, {direccion.ciudad}
       </p>
       <p>🍽️ {tipo_comida.join(", ")}</p>
+
+      {typeof promedio_puntaje === "number" && (
+        <p>⭐ Promedio: {promedio_puntaje.toFixed(2)} / 5</p>
+      )}
+
+      {typeof total_reseñas === "number" && (
+        <p>
+          🗣️ {total_reseñas} reseña{total_reseñas === 1 ? "" : "s"}
+        </p>
+      )}
     </div>
   );
 };

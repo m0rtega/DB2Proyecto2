@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import Usuario from "./pages/Usuario";
 import Restaurante from "./pages/Restaurante";
 import Manager from "./pages/Manager";
+import EditarProducto from "./pages/EditarProducto";
+import AgregarProductos from "./pages/AgregarProductos";
 
 function App() {
   useEffect(() => {
@@ -28,6 +30,11 @@ function App() {
         <Route path="/usuario/:id" element={<Usuario />} />
         <Route path="/restaurante/:id" element={<Restaurante />} />
         <Route path="/manager/:id" element={<Manager />} />
+        <Route
+          path="/productos/editar/:productoId"
+          element={<EditarProducto />}
+        />
+        <Route path="productos/agregar/:id" element={<AgregarProductos />} />
         <Route path="*" element={<Login />} />
       </Routes>
     </Router>

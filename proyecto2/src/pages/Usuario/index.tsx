@@ -15,6 +15,8 @@ interface Restaurante {
   tipo_comida: string[];
   onFavorito?: () => void;
   esFavorito?: boolean;
+  promedio_puntaje?: number;
+  total_reseñas?: number;
 }
 
 interface PedidoItem {
@@ -37,6 +39,7 @@ const Usuario = () => {
   const { id } = useParams();
 
   const [search, setSearch] = useState("");
+  const [showMejorCalificados, setShowMejorCalificados] = useState(false);
 
   const [favoritos, setFavoritos] = useState<Restaurante[]>([]);
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
@@ -66,26 +69,30 @@ const Usuario = () => {
   }, [id]);
 
   useEffect(() => {
-    const urlParams = new URLSearchParams();
-    if (search) urlParams.append("search", search);
-    if (tipoComida) urlParams.append("tipo_comida", tipoComida);
-
-    const url = `http://localhost:8000/restaurantes?${urlParams.toString()}`;
-
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setRestaurantes(data);
-        } else {
+    if (showMejorCalificados) {
+      fetch("http://localhost:8000/restaurantes/mejor_calificados")
+        .then((res) => res.json())
+        .then(setRestaurantes)
+        .catch((err) => {
+          console.error("Error al obtener los mejor calificados:", err);
           setRestaurantes([]);
-        }
-      })
-      .catch((err) => {
-        console.error("Error al obtener restaurantes:", err);
-        setRestaurantes([]);
-      });
-  }, [search, tipoComida]);
+        });
+    } else {
+      const urlParams = new URLSearchParams();
+      if (search) urlParams.append("search", search);
+      if (tipoComida) urlParams.append("tipo_comida", tipoComida);
+
+      const url = `http://localhost:8000/restaurantes?${urlParams.toString()}`;
+
+      fetch(url)
+        .then((res) => res.json())
+        .then(setRestaurantes)
+        .catch((err) => {
+          console.error("Error al obtener restaurantes:", err);
+          setRestaurantes([]);
+        });
+    }
+  }, [search, tipoComida, showMejorCalificados]);
 
   return (
     <div className="UserPage">
@@ -119,6 +126,11 @@ const Usuario = () => {
         </button>
         <button onClick={() => setShowOrdenes(!showOrdenes)}>
           {showOrdenes ? "Ocultar órdenes" : "Mostrar órdenes Realizadas"}
+        </button>
+        <button onClick={() => setShowMejorCalificados(!showMejorCalificados)}>
+          {showMejorCalificados
+            ? "Ver todos los restaurantes"
+            : "Mostrar mejor calificados"}
         </button>
       </div>
 

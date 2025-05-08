@@ -19,6 +19,7 @@ interface Articulo {
   descripcion: string;
   precio: number;
   tipo: string[];
+  imagen_id?: string;
 }
 
 interface ItemPedido {
@@ -28,9 +29,22 @@ interface ItemPedido {
   cantidad: number;
 }
 
+interface Resena {
+  _id: string;
+  usuario_id: string;
+  restaurante_id: string;
+  puntaje: number;
+  comentario: string;
+  fecha: string;
+}
+
 const Restaurante = () => {
   const { id } = useParams();
+  const [comentario, setComentario] = useState("");
+  const [puntaje, setPuntaje] = useState(5);
+
   const [restaurante, setRestaurante] = useState<RestauranteData | null>(null);
+  const [resenas, setResenas] = useState<Resena[]>([]);
   const [articulos, setArticulos] = useState<Articulo[]>([]);
   const [pedido, setPedido] = useState<ItemPedido[]>([]);
 
@@ -48,7 +62,63 @@ const Restaurante = () => {
       .catch((err) => {
         console.error("Error al cargar restaurante y artículos:", err);
       });
+
+    fetch(`http://localhost:8000/reseñas?restaurante_id=${id}`)
+      .then((res) => res.json())
+      .then(setResenas)
+      .catch((err) => console.error("Error al cargar reseñas:", err));
   }, [id]);
+
+  const enviarResena = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const loginInfo = localStorage.getItem("loginInfo");
+
+    if (!loginInfo || !id) {
+      alert("No estás logueado o falta el restaurante.");
+      return;
+    }
+
+    const { id: usuario_id } = JSON.parse(loginInfo);
+
+    const payload = {
+      usuario_id,
+      restaurante_id: id,
+      puntaje,
+      comentario,
+    };
+
+    try {
+      const res = await fetch("http://localhost:8000/reseñas", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error("Error al enviar reseña");
+
+      const nueva = await res.json();
+
+      // Actualizar lista de reseñas
+      setResenas((prev) => [
+        ...prev,
+        {
+          ...payload,
+          _id: nueva.id,
+          fecha: new Date().toISOString(),
+        },
+      ]);
+
+      // Limpiar inputs
+      setComentario("");
+      setPuntaje(5);
+      alert("Gracias por tu reseña");
+    } catch (err) {
+      console.error("Error al enviar reseña:", err);
+      alert("No se pudo guardar tu reseña.");
+    }
+  };
 
   const agregarAlPedido = (articulo: Articulo) => {
     setPedido((prev) => {
@@ -144,6 +214,13 @@ const Restaurante = () => {
             <div className="menu-list">
               {articulos.map((art) => (
                 <div key={art._id} className="menu-card">
+                  {art.imagen_id && (
+                    <img
+                      src={`http://localhost:8000/imagenes/${art.imagen_id}`}
+                      alt={art.nombre}
+                      className="articulo-img"
+                    />
+                  )}
                   <h4>{art.nombre}</h4>
                   <p>
                     <strong>Precio:</strong> Q{art.precio}
@@ -179,6 +256,55 @@ const Restaurante = () => {
               <button onClick={realizarPedido}>Realizar pedido</button>
             </>
           )}
+        </div>
+        <hr />
+        <div className="resenas-section">
+          <h3>Reseñas del Restaurante</h3>
+          {resenas.length === 0 ? (
+            <p>No hay reseñas aún.</p>
+          ) : (
+            <div className="resenas-list">
+              {resenas.map((r) => (
+                <div key={r._id} className="resena-card">
+                  <p>
+                    <strong>Puntaje:</strong> {r.puntaje}/5 ⭐
+                  </p>
+                  <p>
+                    <strong>Comentario:</strong> {r.comentario}
+                  </p>
+                  <p className="resena-fecha">
+                    {new Date(r.fecha).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          <hr />
+          <div className="agregar-resena">
+            <h4>Agregar Reseña</h4>
+            <form onSubmit={enviarResena}>
+              <label>
+                Puntaje:
+                <select
+                  value={puntaje}
+                  onChange={(e) => setPuntaje(parseInt(e.target.value))}
+                >
+                  {[5, 4, 3, 2, 1].map((p) => (
+                    <option key={p} value={p}>
+                      {p} ⭐
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <textarea
+                placeholder="Escribe tu comentario..."
+                value={comentario}
+                onChange={(e) => setComentario(e.target.value)}
+                required
+              />
+              <button type="submit">Enviar Reseña</button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

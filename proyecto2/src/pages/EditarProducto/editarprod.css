@@ -1,0 +1,64 @@
+/* editar-producto-page.css */
+
+.editar-producto-page {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 2rem;
+    background: #ffffff;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  
+  .editar-producto-page h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    font-size: 1.8rem;
+    color: #333;
+  }
+  
+  .editar-producto-page form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .editar-producto-page input[type="text"],
+  .editar-producto-page input[type="number"],
+  .editar-producto-page input[type="file"] {
+    padding: 0.7rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+  }
+  
+  .editar-producto-page input[type="file"] {
+    padding: 0.5rem 0;
+  }
+  
+  .editar-producto-page button {
+    background-color: #2c7be5;
+    color: white;
+    padding: 0.8rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .editar-producto-page button:hover {
+    background-color: #1a5dc9;
+  }
+  
+  @media (max-width: 480px) {
+    .editar-producto-page {
+      padding: 1rem;
+    }
+  
+    .editar-producto-page h2 {
+      font-size: 1.5rem;
+    }
+  }
+  
