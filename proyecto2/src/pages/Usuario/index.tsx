@@ -3,6 +3,7 @@ import "./Usuario.css";
 import Navbar from "../../components/navbar";
 import { useEffect, useState } from "react";
 import Cards from "../../components/Cards";
+import OrdenCard from "../../components/OrderCards";
 
 interface Restaurante {
   _id: string;
@@ -16,11 +17,20 @@ interface Restaurante {
   esFavorito?: boolean;
 }
 
+interface PedidoItem {
+  articuloId: string;
+  nombre: string;
+  cantidad: number;
+  precio: number;
+}
 interface Orden {
   _id: string;
   restaurante_id: string;
+  restaurante_nombre: string;
   total: number;
   fecha: string;
+  pedido: PedidoItem[];
+  estado: string;
 }
 
 const Usuario = () => {
@@ -36,21 +46,31 @@ const Usuario = () => {
   const [tipoComida, setTipoComida] = useState("");
 
   useEffect(() => {
-    fetch(`/api/usuarios/${id}/favoritos`)
-      .then((res) => res.json())
-      .then(setFavoritos);
+    if (!id) return;
 
-    fetch(`/api/usuarios/${id}/ordenes`)
+    fetch(`http://localhost:8000/usuarios/${id}/favoritos`)
       .then((res) => res.json())
-      .then(setOrdenes);
+      .then(setFavoritos)
+      .catch((err) => {
+        console.error("Error al obtener favoritos:", err);
+        setFavoritos([]);
+      });
+
+    fetch(`http://localhost:8000/usuarios/${id}/ordenes`)
+      .then((res) => res.json())
+      .then(setOrdenes)
+      .catch((err) => {
+        console.error("Error al obtener órdenes:", err);
+        setOrdenes([]);
+      });
   }, [id]);
 
   useEffect(() => {
-    const url = search
-      ? `http://localhost:8000/restaurantes?search=${encodeURIComponent(
-          search
-        )}`
-      : `http://localhost:8000/restaurantes`;
+    const urlParams = new URLSearchParams();
+    if (search) urlParams.append("search", search);
+    if (tipoComida) urlParams.append("tipo_comida", tipoComida);
+
+    const url = `http://localhost:8000/restaurantes?${urlParams.toString()}`;
 
     fetch(url)
       .then((res) => res.json())
@@ -65,7 +85,7 @@ const Usuario = () => {
         console.error("Error al obtener restaurantes:", err);
         setRestaurantes([]);
       });
-  }, [search]);
+  }, [search, tipoComida]);
 
   return (
     <div className="UserPage">
@@ -102,56 +122,53 @@ const Usuario = () => {
         </button>
       </div>
 
-      {/* {showFavoritos && (
-        <div className="section">
-          <h2>Restaurantes favoritos</h2>
-          {favoritos.length === 0 ? (
-            <p>No tienes favoritos todavía.</p>
-          ) : (
-            favoritos.map((r) => <div key={r._id}>{r.nombre}</div>)
-          )}
-        </div>
-      )} */}
-
-      {/* {showOrdenes && (
+      {showOrdenes && (
         <div className="section">
           <h2>Órdenes realizadas</h2>
           {ordenes.length === 0 ? (
             <p>No has realizado órdenes todavía.</p>
           ) : (
-            ordenes.map((o) => (
-              <div key={o._id}>
-                Pedido en restaurante {o.restaurante_id} - Q{o.total} -{" "}
-                {new Date(o.fecha).toLocaleDateString()}
-              </div>
-            ))
+            <div className="ordenes-grid">
+              {ordenes.map((o) => (
+                <OrdenCard
+                  key={o._id}
+                  restaurante={o.restaurante_nombre || o.restaurante_id}
+                  total={o.total}
+                  fecha={o.fecha}
+                  pedido={o.pedido}
+                  estado={o.estado}
+                />
+              ))}
+            </div>
           )}
         </div>
-      )} */}
+      )}
 
-      <div className="section">
-        <h2>Todos los restaurantes</h2>
-        {restaurantes.map((r) => (
-          <Cards
-            key={r._id}
-            {...r}
-            esFavorito={favoritos.some((f) => f._id === r._id)}
-            onFavorito={() => {
-              const yaEsFavorito = favoritos.some((f) => f._id === r._id);
-              const url = `/api/usuarios/${id}/favorito/${r._id}`;
-              fetch(url, {
-                method: yaEsFavorito ? "DELETE" : "POST",
-              }).then(() => {
-                setFavoritos((prev) =>
-                  yaEsFavorito
-                    ? prev.filter((f) => f._id !== r._id)
-                    : [...prev, r]
-                );
-              });
-            }}
-          />
-        ))}
-      </div>
+      {showOrdenes || (
+        <div className="section">
+          <h2>{showFavoritos ? "Favoritos" : "Todos los restaurantes"}</h2>
+          {(showFavoritos ? favoritos : restaurantes).map((r) => (
+            <Cards
+              key={r._id}
+              {...r}
+              esFavorito={favoritos.some((f) => f._id === r._id)}
+              onFavorito={() => {
+                const yaEsFavorito = favoritos.some((f) => f._id === r._id);
+                const url = `http://localhost:8000/usuarios/${id}/favorito/${r._id}`;
+                fetch(url, {
+                  method: yaEsFavorito ? "DELETE" : "POST",
+                }).then(() => {
+                  setFavoritos((prev) =>
+                    yaEsFavorito
+                      ? prev.filter((f) => f._id !== r._id)
+                      : [...prev, r]
+                  );
+                });
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

@@ -12,6 +12,7 @@ from fastapi import (
     Query,
     status,
 )
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient, ASCENDING, DESCENDING, TEXT, GEOSPHERE
@@ -62,14 +63,23 @@ async def crear_restaurante(restaurante: dict = Body(...)):
 
 @app.get("/restaurantes", tags=["Restaurantes"])
 async def listar_restaurantes(
+    search: Optional[str] = Query(None, description="Buscar por nombre de restaurante"),
+    tipo_comida: Optional[str] = Query(None, description="Filtrar por tipo de comida"),
     limite: int = Query(50, le=100),
     skip: int = Query(0, ge=0),
     sort_por: str = Query("nombre", enum=["nombre", "_id"]),
     orden: str = Query("asc", enum=["asc", "desc"]),
 ):
+    filtro = {}
+
+    if search:
+        filtro["nombre"] = {"$regex": search, "$options": "i"}
+    if tipo_comida:
+        filtro["tipo_comida"] = tipo_comida 
+
     direccion = ASCENDING if orden == "asc" else DESCENDING
     cursor = (
-        db.restaurantes.find({}, projection={"horario": 0})
+        db.restaurantes.find(filtro, projection={"horario": 0})
         .sort(sort_por, direccion)
         .skip(skip)
         .limit(limite)
@@ -146,6 +156,78 @@ async def eliminar_usuario(usuario_id: str):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
 
+@app.get("/usuarios/{usuario_id}/favoritos", tags=["Usuarios"])
+async def obtener_favoritos(usuario_id: str):
+    usuario = db.usuarios.find_one({"_id": ObjectId(usuario_id)})
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    favoritos_ids = usuario.get("favoritos", [])
+    restaurantes = db.restaurantes.find(
+        {"_id": {"$in": favoritos_ids}},
+        projection={"horario": 0}
+    )
+    return [serialize_doc(r) for r in restaurantes]
+
+@app.post("/usuarios/{usuario_id}/favorito/{restaurante_id}", status_code=201, tags=["Usuarios"])
+async def agregar_favorito(usuario_id: str, restaurante_id: str):
+    resultado = db.usuarios.update_one(
+        {"_id": ObjectId(usuario_id)},
+        {"$addToSet": {"favoritos": ObjectId(restaurante_id)}}
+    )
+    if resultado.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {"mensaje": "Favorito agregado"}
+
+@app.delete("/usuarios/{usuario_id}/favorito/{restaurante_id}", status_code=204, tags=["Usuarios"])
+async def eliminar_favorito(usuario_id: str, restaurante_id: str):
+    resultado = db.usuarios.update_one(
+        {"_id": ObjectId(usuario_id)},
+        {"$pull": {"favoritos": ObjectId(restaurante_id)}}
+    )
+    if resultado.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+def serialize_doc(doc):
+    def convert(value):
+        if isinstance(value, ObjectId):
+            return str(value)
+        elif isinstance(value, list):
+            return [convert(item) for item in value]
+        elif isinstance(value, dict):
+            return {k: convert(v) for k, v in value.items()}
+        else:
+            return value
+
+    return {k: convert(v) for k, v in doc.items()}
+
+
+@app.get("/usuarios/{usuario_id}/ordenes", tags=["Órdenes"])
+async def listar_ordenes_usuario(usuario_id: str):
+    try:
+        ordenes_cursor = db.ordenes.find(
+            {"usuario_id": ObjectId(usuario_id)}
+        ).sort("fecha", DESCENDING)
+
+        ordenes = []
+        for orden in ordenes_cursor:
+            restaurante = db.restaurantes.find_one(
+                {"_id": orden["restaurante_id"]},
+                projection={"nombre": 1}
+            )
+            # Agrega el nombre del restaurante como campo adicional
+            orden["restaurante_nombre"] = restaurante["nombre"] if restaurante else "Desconocido"
+
+            # Serializa todo, incluyendo ObjectId dentro de pedido
+            ordenes.append(serialize_doc(orden))
+
+        return ordenes
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener órdenes: {str(e)}")
+
+
+
 
 # ---------------------------------------------------------------------------
 # CRUD – ARTÍCULOS
@@ -171,6 +253,24 @@ async def listar_menu(
         filtro["tipo"] = tipo
     articulos = db.articulos.find(filtro, projection={"descripcion": 0}).limit(limite)
     return [serialize_doc(a) for a in articulos]
+
+@app.get("/restaurantes/{restaurante_id}/detalle", tags=["Restaurantes"])
+async def obtener_restaurante_con_articulos(restaurante_id: str):
+    restaurante = db.restaurantes.find_one({"_id": ObjectId(restaurante_id)})
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante no encontrado")
+
+    articulos = list(
+        db.articulos.find(
+            {"restaurante_id": ObjectId(restaurante_id)}
+        )
+    )
+
+    return {
+        "restaurante": serialize_doc(restaurante),
+        "articulos": [serialize_doc(a) for a in articulos]
+    }
+
 
 
 @app.get("/articulos/{articulo_id}", tags=["Artículos"])
@@ -206,8 +306,14 @@ async def crear_orden(orden: dict = Body(...)):
     orden["usuario_id"] = ObjectId(orden["usuario_id"])
     orden["restaurante_id"] = ObjectId(orden["restaurante_id"])
     orden["fecha"] = datetime.utcnow()
+    orden["estado"] = orden.get("estado", "Pendiente")  # por si frontend no lo manda
     for item in orden["pedido"]:
         item["articuloId"] = ObjectId(item["articuloId"])
+
+        articulo = db.articulos.find_one({"_id": item["articuloId"]}, {"nombre": 1})
+        item["nombre"] = articulo["nombre"] if articulo else "Desconocido"
+
+
     orden["total"] = sum(i["precio"] * i["cantidad"] for i in orden["pedido"])
     db.ordenes.insert_one(orden)
     return {"id": str(orden["_id"])}
@@ -215,15 +321,19 @@ async def crear_orden(orden: dict = Body(...)):
 
 @app.get("/ordenes", tags=["Órdenes"])
 async def listar_ordenes(
-    usuario_id: Optional[str] = None,
-    estado: Optional[str] = None,
-    desde: Optional[datetime] = None,
-    hasta: Optional[datetime] = None,
+    usuario_id: Optional[str] = Query(None),
+    restaurante_id: Optional[str] = Query(None),
+    estado: Optional[str] = Query(None),
+    desde: Optional[datetime] = Query(None),
+    hasta: Optional[datetime] = Query(None),
     limite: int = 100,
 ):
     filtro = {}
+
     if usuario_id:
         filtro["usuario_id"] = ObjectId(usuario_id)
+    if restaurante_id:
+        filtro["restaurante_id"] = ObjectId(restaurante_id)
     if estado:
         filtro["estado"] = estado
     if desde or hasta:
@@ -235,7 +345,7 @@ async def listar_ordenes(
         filtro["fecha"] = rango
 
     ordenes = (
-        db.ordenes.find(filtro, projection={"pedido": 0})
+        db.ordenes.find(filtro)
         .sort("fecha", DESCENDING)
         .limit(limite)
     )
@@ -255,11 +365,25 @@ async def actualizar_orden(orden_id: str, datos: dict = Body(...)):
     if "pedido" in datos:
         for item in datos["pedido"]:
             item["articuloId"] = ObjectId(item["articuloId"])
+            articulo = db.articulos.find_one({"_id": item["articuloId"]}, {"nombre": 1})
+            item["nombre"] = articulo["nombre"] if articulo else "Desconocido"
         datos["total"] = sum(i["precio"] * i["cantidad"] for i in datos["pedido"])
-    resultado = db.ordenes.update_one({"_id": ObjectId(orden_id)}, {"$set": datos})
+    
+    if "estado" in datos:
+        # Asegúrate de que sea un valor válido (opcional)
+        if datos["estado"] not in ["Pendiente", "Preparando", "Entregado"]:
+            raise HTTPException(status_code=400, detail="Estado no válido")
+    
+    resultado = db.ordenes.update_one(
+        {"_id": ObjectId(orden_id)},
+        {"$set": datos}
+    )
+
     if resultado.matched_count == 0:
         raise HTTPException(status_code=404, detail="Orden no encontrada")
+    
     return {"mensaje": "Orden actualizada"}
+
 
 
 @app.delete("/ordenes/{orden_id}", status_code=204, tags=["Órdenes"])
@@ -268,6 +392,18 @@ async def eliminar_orden(orden_id: str):
         raise HTTPException(status_code=404, detail="Orden no encontrada")
 
 
+class DeleteManyPayload(BaseModel):
+    ids: List[str]
+
+@app.delete("/ordenes", status_code=204, tags=["Órdenes"])
+async def eliminar_multiples_ordenes(payload: DeleteManyPayload):
+    try:
+        object_ids = [ObjectId(oid) for oid in payload.ids]
+        resultado = db.ordenes.delete_many({"_id": {"$in": object_ids}})
+        if resultado.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="No se eliminaron órdenes")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al eliminar órdenes: {str(e)}")
 
 
 # ---------------------------------------------------------------------------

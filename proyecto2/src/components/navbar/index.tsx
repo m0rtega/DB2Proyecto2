@@ -11,6 +11,9 @@ const Navbar = ({ displayText }: NavbarProps) => {
   return (
     <div className="navbarUser">
       <div>{displayText}</div>
+      <button className="" onClick={() => (window.location.href = "/")}>
+        Home
+      </button>
       <button className="btnRed" onClick={handleLogout}>
         Log out
       </button>

@@ -13,7 +13,7 @@ const Login = () => {
     if (userType === "usuario") {
       window.location.href = `/usuario/${id}`;
     } else if (userType === "restaurante") {
-      window.location.href = `/restaurante/${id}`;
+      window.location.href = `/manager/${id}`;
     }
   };
 

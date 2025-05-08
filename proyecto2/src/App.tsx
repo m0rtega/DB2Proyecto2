@@ -3,6 +3,8 @@ import Login from "./pages/login";
 import "./App.css";
 import { useEffect } from "react";
 import Usuario from "./pages/Usuario";
+import Restaurante from "./pages/Restaurante";
+import Manager from "./pages/Manager";
 
 function App() {
   useEffect(() => {
@@ -13,11 +15,8 @@ function App() {
 
       if (tipo === "usuario" && currentPath !== `/usuario/${id}`) {
         window.location.href = `/usuario/${id}`;
-      } else if (
-        tipo === "restaurante" &&
-        currentPath !== `/restaurante/${id}`
-      ) {
-        window.location.href = `/restaurante/${id}`;
+      } else if (tipo === "restaurante" && currentPath !== `/manager/${id}`) {
+        window.location.href = `/manager/${id}`;
       }
     }
   }, []);
@@ -27,6 +26,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/usuario/:id" element={<Usuario />} />
+        <Route path="/restaurante/:id" element={<Restaurante />} />
+        <Route path="/manager/:id" element={<Manager />} />
         <Route path="*" element={<Login />} />
       </Routes>
     </Router>

@@ -1,0 +1,54 @@
+.manager-nav {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f5f5f5;
+}
+
+.manager-nav button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: #ddd;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.orden-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.orden-actions button {
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.manager-nav .active {
+  background-color: #4287f5;
+  color: white;
+}
+
+.kanban-board {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.kanban-column {
+  flex: 1;
+  background-color: #fafafa;
+  border: 1px solid #ccc;
+  padding: 1rem;
+  border-radius: 5px;
+}
+
+.orden-card {
+  background: white;
+  border: 1px solid #ddd;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
