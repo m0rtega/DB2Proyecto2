@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./login.css";
 
 const Login = () => {
   const [userType, setUserType] = useState("usuario");
   const [id, setId] = useState("");
+  const navigate = useNavigate();
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +43,13 @@ const Login = () => {
         />
         <button type="submit">Login</button>
       </form>
+
+      <div style={{ marginTop: "1rem", textAlign: "center" }}>
+        <p>¿No tienes cuenta?</p>
+        <button onClick={() => navigate("/signup")} className="btnSecondary">
+          Registrarse
+        </button>
+      </div>
     </div>
   );
 };

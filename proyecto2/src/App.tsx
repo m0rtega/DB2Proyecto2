@@ -7,6 +7,7 @@ import Restaurante from "./pages/Restaurante";
 import Manager from "./pages/Manager";
 import EditarProducto from "./pages/EditarProducto";
 import AgregarProductos from "./pages/AgregarProductos";
+import SignUp from "./pages/SingUp";
 
 function App() {
   useEffect(() => {
@@ -27,6 +28,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="SignUp" element={<SignUp />} />
         <Route path="/usuario/:id" element={<Usuario />} />
         <Route path="/restaurante/:id" element={<Restaurante />} />
         <Route path="/manager/:id" element={<Manager />} />
